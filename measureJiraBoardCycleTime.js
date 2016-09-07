@@ -1,7 +1,5 @@
 var http = require("https");
 
-
-//Get the issues from sprint and calcualte cycle time
 var options = {
   "method": "GET",
   "hostname": "myhost.atlassian.net",
@@ -13,6 +11,7 @@ var options = {
     "postman-token": "POSTMAN TOKEN IF YOU ARE USING ONE"
   }
 };
+
 
 if(process.argv[2] !== undefined) {
     var passedSprintId = process.argv[2];
@@ -30,22 +29,21 @@ var req = http.request(options, function (res) {
       var body = Buffer.concat(chunks);
       var sprintIssues = JSON.parse(body.toString());
       
-      var numberOfIssues = sprintIssues.total;
       var issueCounter = {
           "story": 0,
           "bug": 0,
           "total": 0
       };
+      
       var sumOfCycleTime = 0;
       
-      for(var i=0; i < numberOfIssues; i++) {
+      for(var i=0; i < sprintIssues.issues.length; i++) {
+          
           var issue = sprintIssues.issues[i];
           var issueType = issue.fields.issuetype.name;
           var issueChangeLog = issue.changelog;
           var issueKey = issue.key;
-
-//if(issueKey === 'KEY') {
-
+          var issueCreatedDate = issue.fields.created;
           
           //calculate start/stop time
           var startTime = null;
@@ -53,31 +51,26 @@ var req = http.request(options, function (res) {
     
           if((issueType == 'Bug') || (issueType == 'Story')) {
               
-              
                   for(var j=0; j < issueChangeLog.total; j++) {
                       var historyLogId = issueChangeLog.histories[j].id;
                       var historyLogTime = issueChangeLog.histories[j].created;
-//                    console.log(historyLogId);                      
                       var historyLogItem = issueChangeLog.histories[j].items;
                       
                       for(var k=0; k < historyLogItem.length; k++) {
                           var field = historyLogItem[k].field;
                           var from = historyLogItem[k].fromString;
                           var to = historyLogItem[k].toString;
-//A == To Do, Development, Done
-//MOW == To Do, In Progress, Done
-//I ==                           
+                          
+                          // figure out the start and end of an Jira issue based on status
                           if(field == 'status') {
-                              if((from === 'To Do') && (isValidState(to, ['In Progress', 'Development']))) {
+                              if((isValidState(from, ['To Do', 'Open'])) && (isValidState(to, ['In Progress', 'Development', 'Done']))
+                                        && (startTime === null)) {
                                   startTime = historyLogTime;
                                   
                               }
-                              else if(((from === 'Done') && (isValidState(to, ['In Progress', 'Development']))) 
-                                        && (startTime === null)) {                                  
-                                  startTime = historyLogTime;
-                              }
-                              else if((isValidState(from, ['In Progress', 'Development'])) && (to === 'Done')) {
+                              else if((isValidState(from, ['In Progress', 'Development'])) && (isValidState(to, ['Done', 'Closed', 'Resolved']))) {
                                   stopTime = historyLogTime;
+                                  
                               }
                               console.log(from + ' -> ' + to + ' ->' + historyLogTime);
                           }
@@ -93,6 +86,16 @@ var req = http.request(options, function (res) {
                       console.log(start + ' -- ' + stop);                
                       
                       var cycleTime = getDateIntervalText(diff);
+                      
+                      // Count issue types
+                      if(issueType === 'Story') {
+                          issueCounter.story += 1;
+                      }
+                      else if(issueType === 'Bug') {
+                          issueCounter.bug += 1;
+                      }
+
+                      issueCounter.total += 1;                      
 
                   }
 
@@ -101,31 +104,21 @@ var req = http.request(options, function (res) {
                   console.log('-----------------');
                   console.log('\n');              
               
-              //console.log(issue.key + ' == ' + issueType + ': ChangeLogTotal = ' + issueChangeLog.total);
+                  //console.log(issue.key + ' == ' + issueType + ': ChangeLogTotal = ' + issueChangeLog.total);
 
-              // Count issue types
-              if(issueType === 'Story') {
-                  issueCounter.story += 1;
-              }
-              else if(issueType === 'Bug') {
-                  issueCounter.bug += 1;
-              }
-              
-              issueCounter.total += 1;
           }
     
-//} //end temp location
-          
       }
       
       if(passedSprintId !== undefined) {
           console.log('Sprint Id: ' + passedSprintId);
       }
-      console.log('Stories=' + issueCounter.story + ' Bugs=' + issueCounter.bug + ' Total=' + issueCounter.total + '\n');
+      console.log('Stories=' + issueCounter.story + ' Bugs=' + issueCounter.bug + ' Total=' + issueCounter.total);
       
       //calcualte average cycle time for a sprint
       var averageCycleTime = getDateIntervalText(sumOfCycleTime/issueCounter.total);
       console.log('Average Cycle Time in Sprint= ' + averageCycleTime);
+      console.log('Average Miliseconds: ' + sumOfCycleTime/issueCounter.total + '\n\n');
       
       
       
